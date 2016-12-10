@@ -1,0 +1,15 @@
+{
+  "name": "update-ss-conf",
+  "version": "0.0.1",
+  "description": "Automatically update ShadowsocksX server list",
+  "main": "index.js",
+  "repository": "https://github.com/lubezhang/update-ss-conf.git",
+  "author": "lubezhang@gmail.com",
+  "license": "MIT",
+  "dependencies": {
+    "line-reader": "^0.4.0",
+    "xml2js": "^0.4.17",
+    "xmlbuilder": "^8.2.2",
+    "xmlreader": "^0.2.3"
+  }
+}
