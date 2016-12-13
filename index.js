@@ -1,18 +1,16 @@
 var fs = require('fs');
-var exec = require('child_process').exec; 
 var lineReader = require('line-reader');
-var xmlreader = require("xmlreader");
-var xml2js = require('xml2js');
-var builder = require('xmlbuilder');
+var cheerio = require('cheerio');
 
 var utils = require("./utils")
 
-var parser = new xml2js.Parser()
 
 const workshop = "workshop";
-const xmlFile = "conf.xml";
+const xmlConfFile = "conf.xml";
+const xmlNewConfFile = "newConf.xml";
+const newPlist = "clowwindy.ShadowsocksX.new.plist"
 
-function confToJson(confFilw) {
+function confToJson() {
     console.log("将配置信息转json");
     return new Promise((resolve, reject) => {
         var serverList = [], tmp = {};
@@ -28,11 +26,12 @@ function confToJson(confFilw) {
                 }
                 serverList.push(tmp)
             } else {
-                console.log(line, " server conf exception");
+                // console.log(line, " server conf exception");
                 reject(line + " server conf exception")
             }
 
             if (last) {
+                // console.log(JSON.stringify(serverList));
                 resolve(serverList)
                 return false;
             }
@@ -51,51 +50,96 @@ function backupPlist() {
         // console.log('更新目录已创建成功\n');
     }
 
-    utils.runShell(`cp ~/Library/Preferences/clowwindy.ShadowsocksX.plist ./${workshop}/`).then(() =>{
-        
-    })
+    return utils.runShell(`cp ~/Library/Preferences/clowwindy.ShadowsocksX.plist ./${workshop}/`)
 }
 
-function autoUpdate() {
-    // confToJson().then((list) => {
-    //     // console.log(list);
-    // }); 
-
-    backupPlist();
-    fullConf();
-}
-
-function fullConf() {
+function plist2xml() {
+    console.log("plist2xml");
     // `plutil -convert xml1 clowwindy.ShadowsocksX.plist -o ss.xml`
-    utils.runShell(`plutil -convert xml1 ./${workshop}/clowwindy.ShadowsocksX.plist -o ./${workshop}/${xmlFile}`)
-        .then(res => {
-            readXML()
-        }).catch(error => {
-            console.log("填充配置文件失败：", error);
-        })
-}
-
-function readXML() {
-    // lineReader.eachLine(`./${workshop}/${xmlFile}`, function(line, last) {
-    //     console.log(line);
-    // })
-
-    fs.readFile(`./${workshop}/${xmlFile}`, function(err, data) {
-        parser.parseString(data, function (err, result) {
-            var confData = result.plist.dict[0].data[0];
-            console.log(confData);
-            console.log(new Buffer(confData, 'base64').toString());
-            console.log('Done');
-            // var a = new Buffer('key1=value1&key2=value2').toString('base64');
-        });
-    });
+    return utils.runShell(`plutil -convert xml1 ./${workshop}/clowwindy.ShadowsocksX.plist -o ./${workshop}/${xmlConfFile}`)
 }
 
 /**
  * 将代理服务器的配置信息写入到plist的xml文件中
  */
-function writeServerConf() {
+function updateServerConf(serverConf) {
+    console.log("updateServerConf");
+    return new Promise((resolve, reject) => {
+        fs.readFile(`./${workshop}/${xmlConfFile}`, function(err, data) {
+            if(err) {
+                reject(err);
+            }
+            var $ = cheerio.load(data.toString(), {
+                xmlMode: true
+            })
+            var $data = $("dict").find("data");
+            // console.log($data.html());
+            var conf = new Buffer($data.text(), "base64").toString();
+            console.log(conf);
+            var confJson = JSON.parse(conf);
 
+            var serverList = {
+                "current": 0,
+                "profiles": serverConf
+            }
+            let b64 = new Buffer(JSON.stringify(serverList)).toString('base64');
+            $data.text(`${b64}\n`)
+            resolve($.html())
+            // confToJson().then(server => {
+            //     // console.log(confJson);
+            //     confJson.profiles = server;
+            //     let b64 = new Buffer(JSON.stringify(confJson)).toString('base64');
+            //     $data.text(`${b64}\n`)
+            //     resolve($.html());
+            // }).catch(error =>{
+            //     reject(error)
+            // })
+        })
+    });
+}
+
+
+function writeConfXML(content) {
+    console.log("writeConfXML");
+    // console.log(content);
+    return new Promise((resolve, reject) => {
+        fs.writeFile(`./${workshop}/${xmlNewConfFile}`, content, function(err) {
+            if(err) {
+                reject(err);
+            }
+            resolve()
+        }); 
+    })
+}
+
+function xml2plist() {
+    console.log("xml2plist");
+
+    return utils.runShell(`plutil -convert binary1 ./${workshop}/${xmlNewConfFile} -o ./${workshop}/${newPlist}`);
+}
+
+function importServerConf() {
+    console.log("importServerConf");
+    return utils.runShell(`defaults import clowwindy.ShadowsocksX ./${workshop}/${newPlist}`);
+}
+
+function autoUpdate() {
+    backupPlist().then(res => {
+        return plist2xml();
+    }).then(res => {
+        return confToJson();
+    }).then(res => {
+        return updateServerConf(res);
+    }).then(res => {
+        return writeConfXML(res)
+    }).then(res => {
+        return xml2plist();
+    }).then(res => {
+        return importServerConf()
+    }).catch(err => {
+        console.log("自动更新代理服务器配置失败：", err);
+    });
+    // console.log("done");
 }
 
 autoUpdate();
